@@ -32,7 +32,7 @@ app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_credentials=False,
 
 
 class ResetRequest(BaseModel):
-    controller: str = 'predictive-pressure-v1'
+    controller: str = 'predictive-pressure-v2'
     scenario: str = 'normal'
     seed: int = 7
 
@@ -101,7 +101,7 @@ def forecast(horizon: int = 15):
 
 
 @app.get('/api/comparison')
-def comparison(left: str = 'fixed-time', right: str = 'mpc-lite-v1', steps: int = 90, seed: int = 7, event: str = 'accident', event_tick: int = 20, scenario: str = 'normal'):
+def comparison(left: str = 'fixed-time', right: str = 'predictive-pressure-v2', steps: int = 90, seed: int = 7, event: str = 'accident', event_tick: int = 20, scenario: str = 'normal'):
     return run_comparison(left=left, right=right, steps=steps, seed=seed, event=event or None, event_tick=event_tick, scenario=scenario)
 
 

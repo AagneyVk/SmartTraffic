@@ -1,12 +1,19 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import * as THREE from 'three'
 import './styles.css'
 
-const API = import.meta.env.VITE_API_URL || ''
+const API = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '')
 
 function Metric({ label, value, hint }) {
   return <div className="metric"><span>{label}</span><strong>{value}</strong>{hint && <small>{hint}</small>}</div>
+}
+
+function phaseLabel(phase) {
+  if (phase === 'NS') return 'N/S GREEN'
+  if (phase === 'EW') return 'E/W GREEN'
+  if (phase === 'AMBER') return 'AMBER · ALL RED NEXT'
+  return phase || 'UNKNOWN'
 }
 
 function SignalHead({ phase, axis }) {
@@ -95,7 +102,7 @@ function IntersectionTwin({ frame, mode, title, accent }) {
       const body = new THREE.Mesh(new THREE.BoxGeometry(2.0,.8,4.0), new THREE.MeshStandardMaterial({ color: i % 3 === 0 ? 0x7d8b97 : i % 3 === 1 ? 0x58636c : 0x9a8f7c, roughness:.65 }))
       body.position.y=.55; c.add(body)
       c.visible=false
-      c.userData={dir,target:new THREE.Vector3(),velocity:new THREE.Vector3()}
+      c.userData={dir,target:new THREE.Vector3()}
       scene.add(c)
       return c
     }
@@ -108,15 +115,10 @@ function IntersectionTwin({ frame, mode, title, accent }) {
       camera.aspect = width/height
       camera.updateProjectionMatrix()
     }
-    const setCamera = view => {
-      if (view === 'bird') { camera.position.set(48,58,50); camera.lookAt(0,0,0) }
-      else { camera.position.set(7,4,-48); camera.lookAt(0,2,4) }
-    }
-    setCamera('pov')
     resize()
     const ro = new ResizeObserver(resize); ro.observe(host)
 
-    ctx.current={scene,camera,renderer,pools,dirConfig,lampMeshes,view:'pov',phase:'NS',queues:{north:0,south:0,east:0,west:0}}
+    ctx.current={scene,camera,renderer,pools,dirConfig,lampMeshes,phase:'NS',queues:{north:0,south:0,east:0,west:0}}
     const clock = new THREE.Clock(); let raf=0
     const animate=()=>{
       raf=requestAnimationFrame(animate)
@@ -130,9 +132,7 @@ function IntersectionTwin({ frame, mode, title, accent }) {
           car.visible=i<q
           if(!car.visible) return
           const spacing=5.4
-          let along=cfg.start-cfg.sign*i*spacing
-          const nearGreen=((dir==='north'||dir==='south')?c.phase==='NS':c.phase==='EW')
-          if(nearGreen && i===0) along += cfg.sign*Math.sin(performance.now()/240)*.7
+          const along=cfg.start-cfg.sign*i*spacing
           if(cfg.axis==='z') car.userData.target.set(cfg.lane,.55,along)
           else car.userData.target.set(along,.55,cfg.lane)
           car.position.lerp(car.userData.target,Math.min(1,dt*7))
@@ -140,9 +140,10 @@ function IntersectionTwin({ frame, mode, title, accent }) {
         })
       })
       c.lampMeshes.forEach(({bulb,axis,idx,color})=>{
-        const isGreen=c.phase===axis && idx===2
-        const isRed=c.phase!==axis && idx===0
-        bulb.material.color.setHex(isGreen||isRed?color:0x22282c)
+        const isAmber = c.phase === 'AMBER' && idx === 1
+        const isGreen = c.phase === axis && idx === 2
+        const isRed = c.phase !== 'AMBER' && c.phase !== axis && idx === 0
+        bulb.material.color.setHex(isAmber||isGreen||isRed?color:0x22282c)
       })
       c.renderer.render(c.scene,c.camera)
     }
@@ -165,7 +166,7 @@ function IntersectionTwin({ frame, mode, title, accent }) {
   return <section className={`sim-card ${accent}`}>
     <div className="sim-title-row">
       <div><h2>{title}</h2><p>{title.includes('Fixed') ? 'Conventional clock-timed cycle' : 'Queue-aware predictive control'}</p></div>
-      <div className="phase-readout"><SignalHead phase={frame?.phase||'NS'} axis="NS"/><span>{frame?.phase==='NS'?'N/S GREEN':'E/W GREEN'}</span></div>
+      <div className="phase-readout"><SignalHead phase={frame?.phase||'NS'} axis="NS"/><span>{phaseLabel(frame?.phase)}</span></div>
     </div>
     <div className="twin" ref={mount}/>
     <div className="queue-strip">
@@ -186,11 +187,18 @@ function App(){
   const load=async()=>{
     try{
       setError('')
-      const res=await fetch(`${API}/api/single-junction/comparison?steps=100&seed=7&scenario=${scenario}`)
-      if(!res.ok) throw new Error(`HTTP ${res.status}`)
+      const url=`${API}/api/single-junction/comparison?steps=100&seed=7&scenario=${scenario}`
+      const res=await fetch(url)
+      const contentType=res.headers.get('content-type')||''
+      if(!res.ok) throw new Error(`backend returned HTTP ${res.status}`)
+      if(!contentType.includes('application/json')) throw new Error(`backend did not return JSON from ${url}`)
       const payload=await res.json()
       setData(payload);setTick(0);setRunning(false)
-    }catch(e){setError(`Backend unavailable: ${e.message}`)}
+    }catch(e){
+      setData(null)
+      setRunning(false)
+      setError(`Cannot reach SmartTraffic backend at ${API}. Start FastAPI with: cd backend && uvicorn app.main:app --reload --port 8000. (${e.message})`)
+    }
   }
   useEffect(()=>{load()},[scenario])
   useEffect(()=>{
@@ -210,13 +218,14 @@ function App(){
   return <main>
     <header className="hero">
       <div><p className="eyebrow">SIH PS90 · single-intersection proof</p><h1>SmartTraffic: same junction, same traffic, two signal policies</h1><p className="sub">Left is conventional fixed-clock timing. Right is our adaptive controller. Both receive the exact same seeded arrivals, so any difference comes from signal decisions—not a different traffic pattern.</p></div>
-      <div className="hero-status">{error?'BACKEND ERROR':'DETERMINISTIC A/B'}</div>
+      <div className="hero-status">{error?'BACKEND OFFLINE':'LOCAL A/B'}</div>
     </header>
 
     <div className="controls">
-      <button onClick={()=>setRunning(r=>!r)}>{running?'⏸ Pause':'▶ Run comparison'}</button>
+      <button onClick={()=>setRunning(r=>!r)} disabled={!data}>{running?'⏸ Pause':'▶ Run comparison'}</button>
       <button onClick={()=>{setTick(0);setRunning(false)}}>Reset</button>
       <button onClick={()=>setView(v=>v==='pov'?'bird':'pov')}>{view==='pov'?'Bird’s-eye':'Intersection POV'}</button>
+      <button onClick={load}>Reconnect backend</button>
       <label>Traffic pattern<select value={scenario} onChange={e=>setScenario(e.target.value)}><option value="north-surge">North/south surge</option><option value="east-surge">East/west surge</option><option value="balanced">Balanced traffic</option></select></label>
       <label>Speed<select value={speed} onChange={e=>setSpeed(Number(e.target.value))}><option value="1">1×</option><option value="2">2×</option><option value="4">4×</option></select></label>
     </div>
@@ -240,7 +249,7 @@ function App(){
     <section className="explain">
       <h2>What the judge is seeing</h2>
       <p>The fixed controller changes direction on a clock even when one side is almost empty. SmartTraffic measures opposing queue pressure, uses recent queue growth as a short-horizon demand estimate, keeps a minimum green to avoid rapid switching, and enforces a maximum green so the cross-road cannot starve.</p>
-      <p>Cars are rendered from the measured queue length with fixed 5.4-unit spacing behind the stop line, so they cannot overlap into the previous “concatenated” train.</p>
+      <p>Both simulations use exactly the same arrival schedule. Cars are placed from measured queue lengths with fixed spacing behind the stop line, and signal transitions include amber clearance.</p>
     </section>
   </main>
 }

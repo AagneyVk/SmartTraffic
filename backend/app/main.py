@@ -7,10 +7,10 @@ from fastapi import FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from app.services.benchmark import run_benchmark
+from app.services.benchmark import run_benchmark, run_benchmark_suite
 from app.services.comparison import run_comparison
 from app.services.emergency import PRIORITY_PROFILES, plan_green_corridor
-from app.services.runner import RunConfig, SimulationRunner
+from app.services.runner import CONTROLLERS, RunConfig, SimulationRunner
 from app.services.vision import detect_vehicles, detector_status
 
 runner = SimulationRunner()
@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
         loop_task.cancel()
 
 
-app = FastAPI(title='SmartTraffic API', version='1.2.0', lifespan=lifespan)
+app = FastAPI(title='SmartTraffic API', version='1.3.0', lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_credentials=False, allow_methods=['*'], allow_headers=['*'])
 
 
@@ -55,6 +55,7 @@ def health():
         'status': 'ok',
         'engine': runner.engine.__class__.__name__,
         'controller': runner.controller.name,
+        'controllers': list(CONTROLLERS),
         'vision': detector_status(),
     }
 
@@ -79,9 +80,19 @@ def step():
     return runner.one_step().to_dict()
 
 
+@app.get('/api/controllers')
+def controllers():
+    return {'controllers': list(CONTROLLERS)}
+
+
 @app.get('/api/benchmark')
-def benchmark(steps: int = 120, seed: int = 7):
-    return {'results': run_benchmark(steps=steps, seed=seed)}
+def benchmark(steps: int = 120, seed: int = 7, scenario: str = 'rush'):
+    return {'results': run_benchmark(steps=steps, seed=seed, scenario=scenario)}
+
+
+@app.get('/api/benchmark/suite')
+def benchmark_suite(steps: int = 180):
+    return run_benchmark_suite(steps=max(30, min(steps, 600)))
 
 
 @app.get('/api/forecast')
@@ -90,8 +101,8 @@ def forecast(horizon: int = 15):
 
 
 @app.get('/api/comparison')
-def comparison(left: str = 'fixed-time', right: str = 'predictive-pressure-v1', steps: int = 90, seed: int = 7, event: str = 'accident', event_tick: int = 20):
-    return run_comparison(left=left, right=right, steps=steps, seed=seed, event=event or None, event_tick=event_tick)
+def comparison(left: str = 'fixed-time', right: str = 'mpc-lite-v1', steps: int = 90, seed: int = 7, event: str = 'accident', event_tick: int = 20, scenario: str = 'normal'):
+    return run_comparison(left=left, right=right, steps=steps, seed=seed, event=event or None, event_tick=event_tick, scenario=scenario)
 
 
 @app.get('/api/vision/status')

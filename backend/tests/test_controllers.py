@@ -2,6 +2,7 @@ from app.controllers.actuated import ActuatedController
 from app.controllers.fixed_time import FixedTimeController
 from app.controllers.max_pressure import MaxPressureController
 from app.controllers.mpc_lite import MPCLiteController
+from app.controllers.network_max_pressure import NetworkMaxPressureController
 from app.controllers.predictive_pressure import PredictivePressureController
 from app.simulation.mock_engine import MockTrafficEngine
 
@@ -13,6 +14,7 @@ def test_controllers_emit_all_junction_actions():
         FixedTimeController(),
         ActuatedController(),
         MaxPressureController(),
+        NetworkMaxPressureController(),
         PredictivePressureController(),
         MPCLiteController(),
     )
@@ -25,7 +27,7 @@ def test_controllers_emit_all_junction_actions():
 def test_simulation_is_deterministic():
     a, b = MockTrafficEngine(), MockTrafficEngine()
     a.reset(seed=11); b.reset(seed=11)
-    controller_a = MPCLiteController(); controller_b = MPCLiteController()
+    controller_a = PredictivePressureController(); controller_b = PredictivePressureController()
     for _ in range(20):
         sa, sb = a.snapshot(), b.snapshot()
         a.step(controller_a.choose_phases(sa)); b.step(controller_b.choose_phases(sb))

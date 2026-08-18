@@ -2,56 +2,79 @@
 
 **SIH PS90 — Adaptive Smart Traffic Signal Control**
 
-SmartTraffic is a network-aware traffic orchestration prototype that compares a conventional fixed-time controller against an explainable predictive-pressure controller on the same reproducible traffic state. The architecture is designed to graduate from the built-in deterministic traffic lab to real SUMO/TraCI + OpenStreetMap networks without changing the API or control-room UI.
+SmartTraffic is a local-first traffic-control prototype focused on a clear single-junction A/B demonstration: the same intersection and the same seeded vehicle arrivals are run under a conventional fixed-clock signal and under SmartTraffic's adaptive controller. The browser visualizes both simulations side-by-side with proper signal phases, queue spacing, and POV/bird's-eye views.
 
-## What is implemented
+## Current judge-facing demo
 
-- FastAPI control backend with REST + WebSocket telemetry.
-- Deterministic four-junction traffic engine for development and repeatable benchmarks.
-- Fixed-time and local max-pressure baselines.
-- Network-aware `predictive-pressure-v1` controller that penalizes releasing traffic into congested downstream junctions.
-- Scenario injection: accident/capacity drop, rush-hour surge, emergency corridor marker, clear/reset.
-- React/Vite control-room UI with connected-network heat map, +15 tick forecast view, live queues, phases, throughput, and benchmark table.
-- Reproducible multi-controller benchmark plus frame-by-frame baseline-vs-SmartTraffic comparison replay using identical seeds and disturbances.
-- Environment-selectable mock or SUMO/TraCI engine, geometry-aware traffic-light phase mapping, a controlled 2x2 SUMO demo network, and OSM import helper.
-- Regression tests for controller completeness, determinism, and benchmark output.
+- One physical intersection shown twice side-by-side.
+- Left: conventional fixed-clock signal timing.
+- Right: SmartTraffic adaptive-predictive controller.
+- Both sides receive the exact same deterministic arrival schedule.
+- Proper N/S green, amber clearance, and E/W green transitions.
+- Queue-positioned cars with fixed spacing so vehicles do not overlap.
+- North/south surge, east/west surge, and balanced scenarios.
+- Average queue, wait, throughput, peak queue, and current queue comparison.
+- POV and bird's-eye camera modes.
 
-## Architecture
-
-```text
-images / sensors / map data
-          |
-          v
-   traffic state model
-          |
-    +-----+------+
-    | controllers|
-    +-----+------+
-          |
-          v
-  TrafficEngine interface
-      /           \
- mock lab       SUMO/TraCI
-      \           /
-       live API/WebSocket
-              |
-              v
-       web control room
-```
+The wider repository still contains network-level controller experiments, SUMO/TraCI adapters, emergency priority work, and benchmark services for future expansion. The main browser demo is intentionally single-junction so the comparison is easy to understand and defend.
 
 ## Run locally
 
-### Backend
+SmartTraffic is **not dependent on Vercel or any hosted backend**. Run the backend and frontend in two terminals.
+
+### 1. Backend
+
+From the repository root:
 
 ```bash
 cd backend
 python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\\Scripts\\activate
+```
+
+Activate the environment:
+
+**Windows PowerShell**
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+**Windows Command Prompt**
+
+```bat
+.venv\Scripts\activate.bat
+```
+
+**Linux/macOS**
+
+```bash
+source .venv/bin/activate
+```
+
+Then install and start FastAPI:
+
+```bash
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-### Frontend
+Check the backend directly in your browser:
+
+```text
+http://localhost:8000/health
+```
+
+For the single-junction comparison API:
+
+```text
+http://localhost:8000/api/single-junction/comparison?steps=100&seed=7&scenario=north-surge
+```
+
+Both URLs should return JSON.
+
+### 2. Frontend
+
+Open a second terminal:
 
 ```bash
 cd frontend
@@ -59,41 +82,67 @@ npm install
 npm run dev
 ```
 
-Open the Vite URL shown in the terminal. The frontend expects the API at `http://localhost:8000`; override with `VITE_API_URL`.
+Open the Vite URL shown in the terminal, normally:
 
-## Demo sequence
+```text
+http://localhost:5173
+```
 
-1. Reset both controllers to seed `7`.
-2. Run fixed-time and note queue/throughput.
-3. Switch to Predictive Pressure and reset to the same seed.
-4. Inject **rush hour** or an **accident** while running.
-5. Run the 120-step benchmark and compare average queue, final queue, and throughput.
-6. Use **Judge comparison replay** to animate fixed-time vs SmartTraffic under the same accident.
-7. For the SIH final, set `SMARTTRAFFIC_ENGINE=sumo` and run the same controller API on the SUMO adapter / selected OSM corridor.
+The frontend connects directly to:
 
-## SUMO / real map path
+```text
+http://localhost:8000
+```
 
-1. Install SUMO and make `sumo`, `sumo-gui`, `netconvert`, and TraCI available.
-2. Export a small OSM area.
-3. Convert it with `scripts/import_osm.sh`.
-4. Create routes + a `.sumocfg` file.
-5. Set `SMARTTRAFFIC_SUMO_CONFIG=/absolute/path/demo.sumocfg`.
-6. Set `SMARTTRAFFIC_ENGINE=sumo` (and optionally `SMARTTRAFFIC_SUMO_GUI=1`) before starting the backend.
+You can override it with `VITE_API_URL` if needed.
 
-## Research roadmap
+## If the browser says BACKEND OFFLINE
 
-The current controller is intentionally explainable. The experimentation track is:
+1. Confirm `uvicorn app.main:app --reload --port 8000` is still running.
+2. Open `http://localhost:8000/health` manually.
+3. If that page does not return JSON, fix/start the backend first.
+4. Return to the frontend and click **Reconnect backend**.
 
-1. fixed-time baseline
-2. max-pressure baseline
-3. predictive-pressure controller
-4. short-horizon graph traffic forecast
-5. model-predictive coordinated signal control
-6. emergency-corridor priority
-7. robustness tests for incidents, demand surges, sensor loss, and unseen maps
+The frontend now reports the actual backend URL instead of showing an ambiguous JSON/token parsing error.
 
-No benchmark number in the project should be hard-coded as a claimed improvement. Results must come from identical simulation seeds/scenarios.
+## Single-junction experiment
 
-## Controlled SUMO demo network
+The endpoint:
 
-The repository includes `simulation/demo/` with node, edge, route and SUMO configuration files. Run `scripts/build_demo_network.sh` after installing SUMO to generate `demo.net.xml`, then point `SMARTTRAFFIC_SUMO_CONFIG` at `simulation/demo/demo.sumocfg`. This gives the project a reproducible four-signal network before a real OSM corridor is selected.
+```text
+GET /api/single-junction/comparison
+```
+
+creates one seeded arrival schedule and feeds the same arrivals into both controllers.
+
+### Fixed Clock
+
+- equal timed green windows
+- no awareness of queue demand
+- amber transition when changing phase
+
+### SmartTraffic Adaptive
+
+- compares N/S and E/W queue pressure
+- includes recent queue growth in the short-horizon score
+- minimum-green hysteresis prevents rapid flickering
+- maximum-green protection prevents starvation
+- amber transition before changing phase
+
+This makes the A/B comparison reproducible and fair.
+
+## Research / expansion path
+
+The wider research track remains:
+
+1. fixed-clock baseline
+2. actuated baseline
+3. max-pressure baseline
+4. predictive pressure control
+5. movement-level/network pressure
+6. SUMO/TraCI validation
+7. real OpenStreetMap junction geometry
+8. emergency / ambulance / fire / police priority handling
+9. robustness testing across incidents and unseen demand patterns
+
+No mock-simulator result should be presented as a final SIH performance claim. Final claims should come from controlled SUMO experiments using identical scenarios/seeds.

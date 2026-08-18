@@ -5,13 +5,21 @@ import copy
 import os
 from dataclasses import dataclass
 
+from app.controllers.actuated import ActuatedController
 from app.controllers.fixed_time import FixedTimeController
 from app.controllers.max_pressure import MaxPressureController
+from app.controllers.mpc_lite import MPCLiteController
 from app.controllers.predictive_pressure import PredictivePressureController
 from app.simulation.mock_engine import MockTrafficEngine
 from app.simulation.sumo_engine import SumoTrafficEngine
 
-CONTROLLERS = {'fixed-time': FixedTimeController, 'max-pressure': MaxPressureController, 'predictive-pressure-v1': PredictivePressureController}
+CONTROLLERS = {
+    'fixed-time': FixedTimeController,
+    'actuated': ActuatedController,
+    'max-pressure': MaxPressureController,
+    'predictive-pressure-v1': PredictivePressureController,
+    'mpc-lite-v1': MPCLiteController,
+}
 
 
 @dataclass

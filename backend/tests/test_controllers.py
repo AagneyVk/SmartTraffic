@@ -14,11 +14,9 @@ def test_controllers_emit_all_junction_actions():
 
 def test_simulation_is_deterministic():
     a, b = MockTrafficEngine(), MockTrafficEngine()
-    a.reset(seed=11)
-    b.reset(seed=11)
-    controller = PredictivePressureController()
+    a.reset(seed=11); b.reset(seed=11)
+    controller_a = PredictivePressureController(); controller_b = PredictivePressureController()
     for _ in range(20):
         sa, sb = a.snapshot(), b.snapshot()
-        a.step(controller.choose_phases(sa))
-        b.step(controller.choose_phases(sb))
+        a.step(controller_a.choose_phases(sa)); b.step(controller_b.choose_phases(sb))
     assert a.snapshot().to_dict() == b.snapshot().to_dict()

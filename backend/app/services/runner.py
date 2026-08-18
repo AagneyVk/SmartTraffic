@@ -2,18 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import os
 from dataclasses import dataclass
 
 from app.controllers.fixed_time import FixedTimeController
 from app.controllers.max_pressure import MaxPressureController
 from app.controllers.predictive_pressure import PredictivePressureController
 from app.simulation.mock_engine import MockTrafficEngine
+from app.simulation.sumo_engine import SumoTrafficEngine
 
-CONTROLLERS = {
-    'fixed-time': FixedTimeController,
-    'max-pressure': MaxPressureController,
-    'predictive-pressure-v1': PredictivePressureController,
-}
+CONTROLLERS = {'fixed-time': FixedTimeController, 'max-pressure': MaxPressureController, 'predictive-pressure-v1': PredictivePressureController}
 
 
 @dataclass
@@ -23,9 +21,16 @@ class RunConfig:
     seed: int = 7
 
 
+def make_engine():
+    mode = os.getenv('SMARTTRAFFIC_ENGINE', 'mock').lower()
+    if mode == 'sumo':
+        return SumoTrafficEngine(gui=os.getenv('SMARTTRAFFIC_SUMO_GUI', '0') == '1')
+    return MockTrafficEngine()
+
+
 class SimulationRunner:
     def __init__(self):
-        self.engine = MockTrafficEngine()
+        self.engine = make_engine()
         self.config = RunConfig()
         self.controller = PredictivePressureController()
         self.running = False
@@ -34,23 +39,25 @@ class SimulationRunner:
     def reset(self, config: RunConfig | None = None):
         if config:
             self.config = config
-        controller_cls = CONTROLLERS.get(self.config.controller, PredictivePressureController)
-        self.controller = controller_cls()
+        self.controller = CONTROLLERS.get(self.config.controller, PredictivePressureController)()
         return self.engine.reset(self.config.scenario, self.config.seed)
 
     def snapshot(self):
-        return self.engine.snapshot()
+        if hasattr(self.engine, 'snapshot'):
+            return self.engine.snapshot()
+        return self.engine._snapshot()
 
     def inject(self, event: str):
         self.engine.inject(event)
         return self.snapshot()
 
     def one_step(self):
-        current = self.engine.snapshot()
-        phases = self.controller.choose_phases(current)
-        return self.engine.step(phases)
+        current = self.snapshot()
+        return self.engine.step(self.controller.choose_phases(current))
 
     def forecast(self, horizon: int = 15):
+        if not isinstance(self.engine, MockTrafficEngine):
+            return self.snapshot()
         engine = copy.deepcopy(self.engine)
         controller = copy.deepcopy(self.controller)
         for _ in range(max(1, min(horizon, 120))):

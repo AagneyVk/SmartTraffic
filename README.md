@@ -12,8 +12,8 @@ SmartTraffic is a network-aware traffic orchestration prototype that compares a 
 - Network-aware `predictive-pressure-v1` controller that penalizes releasing traffic into congested downstream junctions.
 - Scenario injection: accident/capacity drop, rush-hour surge, emergency corridor marker, clear/reset.
 - React/Vite control-room UI with connected-network heat map, +15 tick forecast view, live queues, phases, throughput, and benchmark table.
-- Reproducible A/B benchmark endpoint using identical seeds and demand.
-- Optional SUMO/TraCI adapter, a controlled 2x2 SUMO demo-network definition, and OSM import helper.
+- Reproducible multi-controller benchmark plus frame-by-frame baseline-vs-SmartTraffic comparison replay using identical seeds and disturbances.
+- Environment-selectable mock or SUMO/TraCI engine, geometry-aware traffic-light phase mapping, a controlled 2x2 SUMO demo network, and OSM import helper.
 - Regression tests for controller completeness, determinism, and benchmark output.
 
 ## Architecture
@@ -68,7 +68,8 @@ Open the Vite URL shown in the terminal. The frontend expects the API at `http:/
 3. Switch to Predictive Pressure and reset to the same seed.
 4. Inject **rush hour** or an **accident** while running.
 5. Run the 120-step benchmark and compare average queue, final queue, and throughput.
-6. For the SIH final, replace the mock lab with the SUMO adapter and a selected OSM corridor.
+6. Use **Judge comparison replay** to animate fixed-time vs SmartTraffic under the same accident.
+7. For the SIH final, set `SMARTTRAFFIC_ENGINE=sumo` and run the same controller API on the SUMO adapter / selected OSM corridor.
 
 ## SUMO / real map path
 
@@ -77,7 +78,7 @@ Open the Vite URL shown in the terminal. The frontend expects the API at `http:/
 3. Convert it with `scripts/import_osm.sh`.
 4. Create routes + a `.sumocfg` file.
 5. Set `SMARTTRAFFIC_SUMO_CONFIG=/absolute/path/demo.sumocfg`.
-6. Switch the runner from `MockTrafficEngine` to `SumoTrafficEngine` once the concrete intersection IDs and signal programs are known.
+6. Set `SMARTTRAFFIC_ENGINE=sumo` (and optionally `SMARTTRAFFIC_SUMO_GUI=1`) before starting the backend.
 
 ## Research roadmap
 

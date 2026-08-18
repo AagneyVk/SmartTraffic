@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from app.services.benchmark import run_benchmark
 from app.services.comparison import run_comparison
-from app.services.emergency import plan_green_corridor
+from app.services.emergency import PRIORITY_PROFILES, plan_green_corridor
 from app.services.runner import RunConfig, SimulationRunner
 from app.services.vision import detect_vehicles, detector_status
 
@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
         loop_task.cancel()
 
 
-app = FastAPI(title='SmartTraffic API', version='1.1.0', lifespan=lifespan)
+app = FastAPI(title='SmartTraffic API', version='1.2.0', lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_credentials=False, allow_methods=['*'], allow_headers=['*'])
 
 
@@ -43,9 +43,10 @@ class EventRequest(BaseModel):
 
 class CorridorRequest(BaseModel):
     route: list[str]
+    vehicle_type: str = 'ambulance'
     segment_travel_seconds: list[float] | None = None
-    lead_seconds: float = 10.0
-    hold_seconds: float = 18.0
+    lead_seconds: float | None = None
+    hold_seconds: float | None = None
 
 
 @app.get('/health')
@@ -104,10 +105,16 @@ async def vision_analyse(file: UploadFile = File(...)):
     return detect_vehicles(payload, file.filename or 'upload.jpg')
 
 
+@app.get('/api/priority/types')
+def priority_types():
+    return {'types': PRIORITY_PROFILES}
+
+
 @app.post('/api/emergency/corridor')
 def emergency_corridor(body: CorridorRequest):
     return plan_green_corridor(
         route=body.route,
+        vehicle_type=body.vehicle_type,
         segment_travel_seconds=body.segment_travel_seconds,
         lead_seconds=body.lead_seconds,
         hold_seconds=body.hold_seconds,

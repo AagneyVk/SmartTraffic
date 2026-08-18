@@ -8,12 +8,12 @@ SmartTraffic is a network-aware traffic orchestration prototype that compares a 
 
 - FastAPI control backend with REST + WebSocket telemetry.
 - Deterministic four-junction traffic engine for development and repeatable benchmarks.
-- Fixed-time baseline.
+- Fixed-time and local max-pressure baselines.
 - Network-aware `predictive-pressure-v1` controller that penalizes releasing traffic into congested downstream junctions.
-- Scenario injection: accident, rush-hour surge, clear/reset.
-- React/Vite control-room UI with live queues, phases, throughput, and benchmark table.
+- Scenario injection: accident/capacity drop, rush-hour surge, emergency corridor marker, clear/reset.
+- React/Vite control-room UI with connected-network heat map, +15 tick forecast view, live queues, phases, throughput, and benchmark table.
 - Reproducible A/B benchmark endpoint using identical seeds and demand.
-- Optional SUMO/TraCI adapter and OSM import helper.
+- Optional SUMO/TraCI adapter, a controlled 2x2 SUMO demo-network definition, and OSM import helper.
 - Regression tests for controller completeness, determinism, and benchmark output.
 
 ## Architecture
@@ -84,7 +84,7 @@ Open the Vite URL shown in the terminal. The frontend expects the API at `http:/
 The current controller is intentionally explainable. The experimentation track is:
 
 1. fixed-time baseline
-2. actuated / max-pressure baseline
+2. max-pressure baseline
 3. predictive-pressure controller
 4. short-horizon graph traffic forecast
 5. model-predictive coordinated signal control
@@ -92,3 +92,7 @@ The current controller is intentionally explainable. The experimentation track i
 7. robustness tests for incidents, demand surges, sensor loss, and unseen maps
 
 No benchmark number in the project should be hard-coded as a claimed improvement. Results must come from identical simulation seeds/scenarios.
+
+## Controlled SUMO demo network
+
+The repository includes `simulation/demo/` with node, edge, route and SUMO configuration files. Run `scripts/build_demo_network.sh` after installing SUMO to generate `demo.net.xml`, then point `SMARTTRAFFIC_SUMO_CONFIG` at `simulation/demo/demo.sumocfg`. This gives the project a reproducible four-signal network before a real OSM corridor is selected.

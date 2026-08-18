@@ -68,6 +68,11 @@ def benchmark(steps: int = 120, seed: int = 7):
     return {'results': run_benchmark(steps=steps, seed=seed)}
 
 
+@app.get('/api/forecast')
+def forecast(horizon: int = 15):
+    return runner.forecast(horizon).to_dict()
+
+
 @app.post('/api/run')
 async def run():
     global loop_task

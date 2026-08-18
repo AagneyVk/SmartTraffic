@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from app.controllers.fixed_time import FixedTimeController
+from app.controllers.max_pressure import MaxPressureController
 from app.controllers.predictive_pressure import PredictivePressureController
 from app.simulation.mock_engine import MockTrafficEngine
 
 
 def run_benchmark(steps: int = 120, seed: int = 7, scenario: str = 'rush') -> list[dict]:
-    controllers = [FixedTimeController(), PredictivePressureController()]
+    controllers = [FixedTimeController(), MaxPressureController(), PredictivePressureController()]
     results = []
     for controller in controllers:
         engine = MockTrafficEngine()

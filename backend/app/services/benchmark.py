@@ -6,6 +6,7 @@ from app.controllers.actuated import ActuatedController
 from app.controllers.fixed_time import FixedTimeController
 from app.controllers.max_pressure import MaxPressureController
 from app.controllers.mpc_lite import MPCLiteController
+from app.controllers.network_max_pressure import NetworkMaxPressureController
 from app.controllers.predictive_pressure import PredictivePressureController
 from app.simulation.mock_engine import MockTrafficEngine
 
@@ -15,6 +16,7 @@ def _controllers():
         FixedTimeController(),
         ActuatedController(),
         MaxPressureController(),
+        NetworkMaxPressureController(),
         PredictivePressureController(),
         MPCLiteController(),
     ]

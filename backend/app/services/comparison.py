@@ -4,6 +4,7 @@ from app.controllers.actuated import ActuatedController
 from app.controllers.fixed_time import FixedTimeController
 from app.controllers.max_pressure import MaxPressureController
 from app.controllers.mpc_lite import MPCLiteController
+from app.controllers.network_max_pressure import NetworkMaxPressureController
 from app.controllers.predictive_pressure import PredictivePressureController
 from app.simulation.mock_engine import MockTrafficEngine
 
@@ -11,12 +12,13 @@ CONTROLLERS = {
     'fixed-time': FixedTimeController,
     'actuated': ActuatedController,
     'max-pressure': MaxPressureController,
-    'predictive-pressure-v1': PredictivePressureController,
+    'network-max-pressure': NetworkMaxPressureController,
+    'predictive-pressure-v2': PredictivePressureController,
     'mpc-lite-v1': MPCLiteController,
 }
 
 
-def run_comparison(left: str = 'fixed-time', right: str = 'predictive-pressure-v1', steps: int = 90, seed: int = 7, event: str | None = 'accident', event_tick: int = 20, scenario: str = 'normal') -> dict:
+def run_comparison(left: str = 'fixed-time', right: str = 'predictive-pressure-v2', steps: int = 90, seed: int = 7, event: str | None = 'accident', event_tick: int = 20, scenario: str = 'normal') -> dict:
     """Return aligned frame sequences and end metrics from identical demand."""
     steps = max(1, min(steps, 300))
     event_tick = max(0, min(event_tick, steps - 1))

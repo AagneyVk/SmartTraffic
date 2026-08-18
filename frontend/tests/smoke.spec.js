@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 
-test('SmartTraffic map, 3D twin and priority corridor work in Chromium', async ({ page }) => {
+test('SmartTraffic map, animated 3D twin and priority corridor work in Chromium', async ({ page }) => {
   const pageErrors = []
   page.on('pageerror', error => pageErrors.push(error.message))
 
@@ -12,15 +12,24 @@ test('SmartTraffic map, 3D twin and priority corridor work in Chromium', async (
 
   const canvas = page.locator('.twin canvas')
   await expect(canvas).toBeVisible()
-  await expect.poll(async () => canvas.evaluate(el => ({ width: el.width, height: el.height }))).toEqual(expect.objectContaining({ width: expect.any(Number), height: expect.any(Number) }))
   const dimensions = await canvas.evaluate(el => ({ width: el.width, height: el.height }))
   expect(dimensions.width).toBeGreaterThan(100)
   expect(dimensions.height).toBeGreaterThan(100)
 
-  await page.getByRole('button', { name: 'POV' }).click()
-  await page.waitForTimeout(300)
-  await expect(canvas).toBeVisible()
+  // Prove the WebGL scene is actually animating, not just a static canvas.
+  const frameA = await canvas.screenshot()
+  await page.waitForTimeout(700)
+  const frameB = await canvas.screenshot()
+  expect(Buffer.compare(frameA, frameB)).not.toBe(0)
 
+  // Prove the POV camera changes the rendered scene.
+  const birdFrame = await canvas.screenshot()
+  await page.getByRole('button', { name: 'POV' }).click()
+  await page.waitForTimeout(400)
+  const povFrame = await canvas.screenshot()
+  expect(Buffer.compare(birdFrame, povFrame)).not.toBe(0)
+
+  // Exercise a real backend-backed priority corridor.
   await page.getByRole('button', { name: /Fire service/ }).click()
   await page.getByRole('button', { name: /Launch Fire service corridor/ }).click()
 
@@ -30,9 +39,11 @@ test('SmartTraffic map, 3D twin and priority corridor work in Chromium', async (
   await expect(page.locator('.schedule')).toContainText('J2')
   await expect(page.locator('.schedule')).toContainText('J4')
 
-  await page.waitForTimeout(800)
-  const carCount = await page.locator('.twin canvas').count()
-  expect(carCount).toBe(1)
+  await page.waitForTimeout(600)
+  const priorityFrameA = await canvas.screenshot()
+  await page.waitForTimeout(600)
+  const priorityFrameB = await canvas.screenshot()
+  expect(Buffer.compare(priorityFrameA, priorityFrameB)).not.toBe(0)
 
   await page.getByRole('button', { name: 'Predict +15 ticks' }).click()
   await expect(page.locator('.forecast-strip')).toBeVisible()

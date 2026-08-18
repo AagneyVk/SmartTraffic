@@ -115,13 +115,31 @@ def _run(controller, arrivals: list[dict[str, int]]) -> list[dict]:
     total_wait = 0
     frames: list[dict] = []
     service_per_direction = 3
+    actual_phase = 'NS'
+    pending_phase: str | None = None
 
     for tick, incoming in enumerate(arrivals):
         for direction, count in incoming.items():
             q[direction] += count
 
-        phase = controller.choose(tick, q)
-        served = ('north', 'south') if phase == 'NS' else ('east', 'west')
+        desired_phase = controller.choose(tick, q)
+        if pending_phase is not None:
+            actual_phase = pending_phase
+            pending_phase = None
+            phase = actual_phase
+        elif desired_phase != actual_phase:
+            phase = 'AMBER'
+            pending_phase = desired_phase
+        else:
+            phase = actual_phase
+
+        if phase == 'NS':
+            served = ('north', 'south')
+        elif phase == 'EW':
+            served = ('east', 'west')
+        else:
+            served = ()
+
         for direction in served:
             moved = min(service_per_direction, q[direction])
             q[direction] -= moved

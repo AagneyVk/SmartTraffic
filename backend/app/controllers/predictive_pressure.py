@@ -2,49 +2,56 @@ from __future__ import annotations
 
 from app.controllers.base import Controller
 from app.models import NetworkSnapshot, Phase
+from app.controllers.network_max_pressure import NetworkMaxPressureController
 
 
 class PredictivePressureController(Controller):
-    """Explainable network-aware controller with short-horizon queue trend.
+    """Short-horizon predictive movement-pressure controller.
 
-    The controller starts from local max-pressure, estimates whether downstream
-    queues are growing or shrinking from the previous observation, and meters
-    releases toward links forecast to be more congested. It is deliberately
-    lightweight and interpretable; SUMO benchmarks decide whether later graph
-    forecasting or MPC variants are worth keeping.
+    It forecasts each directional approach queue from its recent trend, then
+    computes movement pressure using upstream forecast minus the forecast of the
+    actual downstream receiving approach. A small switch penalty reduces signal
+    chattering. This keeps the controller explainable and network-aware.
     """
 
-    name = 'predictive-pressure-v1'
+    name = 'predictive-pressure-v2'
 
-    def __init__(self, downstream_penalty: float = 0.45, trend_weight: float = 0.8):
-        self.downstream_penalty = downstream_penalty
+    def __init__(self, trend_weight: float = 0.6, switch_penalty: float = 0.5):
         self.trend_weight = trend_weight
-        self.previous_queues: dict[str, int] = {}
-        self.links = {
-            'J1': {'EW': 'J2', 'NS': 'J3'},
-            'J2': {'EW': 'J1', 'NS': 'J4'},
-            'J3': {'EW': 'J4', 'NS': 'J1'},
-            'J4': {'EW': 'J3', 'NS': 'J2'},
-        }
+        self.switch_penalty = switch_penalty
+        self.previous_approaches: dict[tuple[str, str], float] = {}
+        self.previous_phase: dict[str, Phase] = {}
+        self.transfers = NetworkMaxPressureController.TRANSFERS
 
-    def _forecast_queue(self, junction_id: str, current: int) -> float:
-        previous = self.previous_queues.get(junction_id, current)
+    def _forecast(self, jid: str, direction: str, current: float) -> float:
+        key = (jid, direction)
+        previous = self.previous_approaches.get(key, current)
         trend = current - previous
         return max(0.0, current + self.trend_weight * trend)
 
     def choose_phases(self, snapshot: NetworkSnapshot) -> dict[str, Phase]:
-        by_id = {j.id: j for j in snapshot.junctions}
-        forecasts = {jid: self._forecast_queue(jid, j.queue) for jid, j in by_id.items()}
+        forecasts: dict[tuple[str, str], float] = {}
+        for j in snapshot.junctions:
+            for direction in ('north', 'south', 'east', 'west'):
+                forecasts[(j.id, direction)] = self._forecast(j.id, direction, float(getattr(j, direction)))
+
         actions: dict[str, Phase] = {}
         for j in snapshot.junctions:
-            ns_score = float(j.pressure_ns)
-            ew_score = float(j.pressure_ew)
-            for phase, downstream in self.links.get(j.id, {}).items():
-                downstream_q = forecasts.get(downstream, 0.0)
-                if phase == 'NS':
-                    ns_score -= self.downstream_penalty * downstream_q
-                else:
-                    ew_score -= self.downstream_penalty * downstream_q
-            actions[j.id] = 'NS' if ns_score >= ew_score else 'EW'
-        self.previous_queues = {j.id: j.queue for j in snapshot.junctions}
+            scores: dict[Phase, float] = {'NS': 0.0, 'EW': 0.0}
+            for phase, directions in (('NS', ('north', 'south')), ('EW', ('east', 'west'))):
+                for direction in directions:
+                    upstream = forecasts[(j.id, direction)]
+                    target = self.transfers.get((j.id, direction))
+                    downstream = 0.0 if target is None else forecasts[(target[0], target[1])]
+                    scores[phase] += upstream - downstream
+                if self.previous_phase.get(j.id) not in (None, phase):
+                    scores[phase] -= self.switch_penalty
+            actions[j.id] = 'NS' if scores['NS'] >= scores['EW'] else 'EW'
+
+        self.previous_approaches = {
+            (j.id, direction): float(getattr(j, direction))
+            for j in snapshot.junctions
+            for direction in ('north', 'south', 'east', 'west')
+        }
+        self.previous_phase = actions.copy()
         return actions

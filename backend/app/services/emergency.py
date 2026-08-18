@@ -3,12 +3,22 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
+PRIORITY_PROFILES = {
+    'ambulance': {'priority': 100, 'lead_seconds': 12.0, 'hold_seconds': 20.0, 'max_delay_seconds': 0.0},
+    'fire': {'priority': 95, 'lead_seconds': 14.0, 'hold_seconds': 22.0, 'max_delay_seconds': 0.0},
+    'disaster-response': {'priority': 90, 'lead_seconds': 12.0, 'hold_seconds': 20.0, 'max_delay_seconds': 2.0},
+    'police': {'priority': 80, 'lead_seconds': 10.0, 'hold_seconds': 16.0, 'max_delay_seconds': 3.0},
+    'vip': {'priority': 55, 'lead_seconds': 8.0, 'hold_seconds': 12.0, 'max_delay_seconds': 8.0},
+}
+
+
 @dataclass(frozen=True)
 class CorridorStep:
     junction_id: str
     eta_seconds: float
     green_lead_seconds: float
     hold_seconds: float
+    release_seconds: float
 
     def to_dict(self) -> dict:
         return {
@@ -16,12 +26,30 @@ class CorridorStep:
             'eta_seconds': round(self.eta_seconds, 1),
             'green_lead_seconds': round(self.green_lead_seconds, 1),
             'hold_seconds': round(self.hold_seconds, 1),
+            'release_seconds': round(self.release_seconds, 1),
         }
 
 
-def plan_green_corridor(route: list[str], segment_travel_seconds: list[float] | None = None, lead_seconds: float = 10.0, hold_seconds: float = 18.0) -> dict:
+def plan_green_corridor(
+    route: list[str],
+    segment_travel_seconds: list[float] | None = None,
+    lead_seconds: float | None = None,
+    hold_seconds: float | None = None,
+    vehicle_type: str = 'ambulance',
+) -> dict:
+    profile = PRIORITY_PROFILES.get(vehicle_type, PRIORITY_PROFILES['ambulance'])
+    lead = float(profile['lead_seconds'] if lead_seconds is None else lead_seconds)
+    hold = float(profile['hold_seconds'] if hold_seconds is None else hold_seconds)
+
     if not route:
-        return {'route': [], 'schedule': [], 'total_eta_seconds': 0.0}
+        return {
+            'vehicle_type': vehicle_type,
+            'priority': profile['priority'],
+            'route': [],
+            'schedule': [],
+            'total_eta_seconds': 0.0,
+            'strategy': 'rolling-green-wave',
+        }
 
     if segment_travel_seconds is None:
         segment_travel_seconds = [35.0] * max(0, len(route) - 1)
@@ -31,13 +59,18 @@ def plan_green_corridor(route: list[str], segment_travel_seconds: list[float] | 
     eta = 0.0
     schedule: list[CorridorStep] = []
     for idx, junction_id in enumerate(route):
-        schedule.append(CorridorStep(junction_id, eta, lead_seconds, hold_seconds))
+        release = max(0.0, eta - lead) + hold
+        schedule.append(CorridorStep(junction_id, eta, lead, hold, release))
         if idx < len(segment_travel_seconds):
             eta += max(1.0, float(segment_travel_seconds[idx]))
 
     return {
+        'vehicle_type': vehicle_type,
+        'priority': profile['priority'],
         'route': route,
         'schedule': [step.to_dict() for step in schedule],
         'total_eta_seconds': round(eta, 1),
+        'max_delay_seconds': profile['max_delay_seconds'],
         'strategy': 'rolling-green-wave',
+        'recovery': 'restore-network-optimum-after-passage',
     }

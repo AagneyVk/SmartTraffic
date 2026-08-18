@@ -3,5 +3,8 @@ uvicorn[standard]>=0.35,<1
 pydantic>=2.11,<3
 pytest>=8.4,<9
 httpx>=0.28,<1
+python-multipart>=0.0.20,<1
 # Optional when SUMO is installed separately:
 traci>=1.23
+# Optional CV runtime for /api/vision/analyse:
+# ultralytics>=8.3

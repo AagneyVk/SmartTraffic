@@ -1,13 +1,14 @@
-import shutil
-
 import pytest
 
-from app.services.sumo_physics import run_sumo_physics_comparison
+from app.services.sumo_physics import physics_status, run_sumo_physics_comparison
 
 
-@pytest.mark.skipif(shutil.which('sumo') is None or shutil.which('netconvert') is None, reason='SUMO not installed')
+@pytest.mark.skipif(not physics_status()['sumo'] or not physics_status()['netconvert'], reason='SUMO runtime unavailable')
 def test_sumo_physics_returns_authoritative_vehicle_frames():
-    result = run_sumo_physics_comparison(steps=30, seed=7, scenario='balanced')
+    status = physics_status()
+    assert status['sumo_binary']
+    assert status['netconvert_binary']
+    result = run_sumo_physics_comparison(steps=30, seed=7, scenario='balanced', live=True)
     assert result['engine'] == 'SUMO/TraCI'
     assert result['physics']['authoritative_positions'] is True
     assert result['physics']['car_following'] == 'IDM'

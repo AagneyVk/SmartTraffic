@@ -12,6 +12,7 @@ from app.services.comparison import run_comparison
 from app.services.emergency import PRIORITY_PROFILES, plan_green_corridor
 from app.services.runner import CONTROLLERS, RunConfig, SimulationRunner
 from app.services.single_junction import run_single_junction_comparison
+from app.services.sumo_physics import physics_status, run_sumo_physics_comparison
 from app.services.vision import detect_vehicles, detector_status
 
 runner = SimulationRunner()
@@ -28,7 +29,7 @@ async def lifespan(app: FastAPI):
         loop_task.cancel()
 
 
-app = FastAPI(title='SmartTraffic API', version='1.4.0', lifespan=lifespan)
+app = FastAPI(title='SmartTraffic API', version='1.5.0', lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_credentials=False, allow_methods=['*'], allow_headers=['*'])
 
 
@@ -58,6 +59,7 @@ def health():
         'controller': runner.controller.name,
         'controllers': list(CONTROLLERS),
         'vision': detector_status(),
+        'physics': physics_status(),
     }
 
 
@@ -99,6 +101,16 @@ def benchmark_suite(steps: int = 180):
 @app.get('/api/single-junction/comparison')
 def single_junction_comparison(steps: int = 90, seed: int = 7, scenario: str = 'north-surge'):
     return run_single_junction_comparison(steps=steps, seed=seed, scenario=scenario)
+
+
+@app.get('/api/physics/status')
+def sumo_physics_status():
+    return physics_status()
+
+
+@app.get('/api/physics/comparison')
+def sumo_physics_comparison(steps: int = 100, seed: int = 7, scenario: str = 'north-surge'):
+    return run_sumo_physics_comparison(steps=steps, seed=seed, scenario=scenario)
 
 
 @app.get('/api/forecast')

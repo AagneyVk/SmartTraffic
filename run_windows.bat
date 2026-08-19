@@ -49,8 +49,8 @@ if errorlevel 1 (
 popd
 
 echo [4/4] Starting SmartTraffic...
-start "SmartTraffic Backend" cmd /k "cd /d "%~dp0backend" && .venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000"
-start "SmartTraffic Frontend" cmd /k "cd /d "%~dp0frontend" && npm run dev"
+start "SmartTraffic Backend" cmd /k "cd /d ""%~dp0backend"" && .venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000"
+start "SmartTraffic Frontend" cmd /k "cd /d ""%~dp0frontend"" && npm run dev"
 
 echo.
 echo SmartTraffic is starting.

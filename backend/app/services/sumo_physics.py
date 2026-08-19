@@ -84,12 +84,12 @@ class _SignalDriver:
     def __init__(self, traci, tls_id: str, initial: str = 'NS'):
         self.traci = traci
         self.tls_id = tls_id
+        self.logic = traci.trafficlight.getAllProgramLogics(tls_id)[0]
         self.green = {
             'NS': _green_phase_index(traci, tls_id, 'NS'),
             'EW': _green_phase_index(traci, tls_id, 'EW'),
         }
-        logic = traci.trafficlight.getAllProgramLogics(tls_id)[0]
-        self.phase_count = len(logic.phases)
+        self.phase_count = len(self.logic.phases)
         self.current = initial
         self.pending: str | None = None
         self.yellow_left = 0
@@ -108,7 +108,7 @@ class _SignalDriver:
             return 'AMBER'
         if desired != self.current:
             candidate = (self.green[self.current] + 1) % self.phase_count
-            state = self.traci.trafficlight.getAllProgramLogics(self.tls_id)[0].phases[candidate].state
+            state = self.logic.phases[candidate].state
             if 'y' in state.lower():
                 self.traci.trafficlight.setPhase(self.tls_id, candidate)
                 self.traci.trafficlight.setPhaseDuration(self.tls_id, 3)
@@ -130,10 +130,7 @@ def _inject_arrivals(traci, tick: int, incoming: dict[str, int], seed: int) -> N
             try:
                 traci.vehicle.add(vid, ROUTES[direction], typeID=kind, departLane='best', departSpeed='max')
             except Exception:
-                # Congested insertion can be delayed by SUMO; skipping here keeps the
-                # fixed/PQP runs identical because both see the same insertion attempt.
                 pass
-    # fixed cross traffic at downstream Junction B
     if tick % 5 == 0:
         for rid, suffix in [('north_south_B', 'bn'), ('south_north_B', 'bs')]:
             kind = TYPE_MIX[rng.randrange(len(TYPE_MIX))]
@@ -170,7 +167,7 @@ def _run_policy(policy: str, arrivals: list[dict[str, int]], seed: int) -> list[
 
     if traci.isLoaded():
         traci.close()
-    traci.start([sumo, '-c', str(CONFIG_FILE), '--seed', str(seed), '--start'], cwd=str(PHYSICS_DIR))
+    traci.start([sumo, '-c', str(CONFIG_FILE), '--seed', str(seed), '--start'])
     try:
         a_driver = _SignalDriver(traci, 'A', 'NS')
         b_driver = _SignalDriver(traci, 'B', 'NS')

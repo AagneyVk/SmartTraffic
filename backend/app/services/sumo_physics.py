@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import random
 import shutil
 import subprocess
@@ -9,6 +10,7 @@ from app.services.single_junction import AdaptiveJunctionController, FixedClockC
 
 ROOT = Path(__file__).resolve().parents[3]
 PHYSICS_DIR = ROOT / 'simulation' / 'physics'
+TRACE_DIR = PHYSICS_DIR / 'traces'
 NET_FILE = PHYSICS_DIR / 'physics.net.xml'
 CONFIG_FILE = PHYSICS_DIR / 'physics.sumocfg'
 TYPE_MIX = ('car', 'bike', 'car', 'auto', 'car', 'bus', 'bike', 'van', 'car', 'truck', 'auto', 'car')
@@ -20,11 +22,24 @@ ROUTES = {
 }
 
 
+def _trace_path(steps: int, seed: int, scenario: str) -> Path:
+    safe = scenario.replace('/', '-').replace('..', '-')
+    return TRACE_DIR / f'{safe}-s{steps}-seed{seed}.json'
+
+
+def available_traces() -> list[str]:
+    if not TRACE_DIR.exists():
+        return []
+    return sorted(p.name for p in TRACE_DIR.glob('*.json'))
+
+
 def physics_status() -> dict:
     return {
         'sumo': shutil.which('sumo') is not None,
         'netconvert': shutil.which('netconvert') is not None,
         'network_built': NET_FILE.exists(),
+        'bundled_replay': bool(available_traces()),
+        'available_traces': available_traces(),
         'config': str(CONFIG_FILE),
     }
 
@@ -219,7 +234,7 @@ def _summary(frames: list[dict]) -> dict:
     }
 
 
-def run_sumo_physics_comparison(steps: int = 100, seed: int = 7, scenario: str = 'north-surge') -> dict:
+def generate_sumo_physics_comparison(steps: int = 100, seed: int = 7, scenario: str = 'north-surge') -> dict:
     _ensure_network()
     steps = max(30, min(steps, 180))
     arrivals = _arrival_schedule(steps, seed, scenario)
@@ -227,6 +242,7 @@ def run_sumo_physics_comparison(steps: int = 100, seed: int = 7, scenario: str =
     adaptive = _run_policy('adaptive', arrivals, seed)
     return {
         'engine': 'SUMO/TraCI',
+        'source': 'live-sumo',
         'physics': {
             'car_following': 'IDM',
             'lane_changing': 'LC2013',
@@ -248,3 +264,26 @@ def run_sumo_physics_comparison(steps: int = 100, seed: int = 7, scenario: str =
         'fixed': {'controller': 'fixed-clock', 'frames': fixed, 'summary': _summary(fixed)},
         'adaptive': {'controller': 'predictive-queue-pressure', 'frames': adaptive, 'summary': _summary(adaptive)},
     }
+
+
+def write_bundled_trace(steps: int = 100, seed: int = 7, scenario: str = 'north-surge') -> Path:
+    result = generate_sumo_physics_comparison(steps=steps, seed=seed, scenario=scenario)
+    result['source'] = 'bundled-sumo-replay'
+    result['physics']['generated_by'] = 'SUMO/TraCI'
+    TRACE_DIR.mkdir(parents=True, exist_ok=True)
+    path = _trace_path(result['steps'], seed, scenario)
+    path.write_text(json.dumps(result, separators=(',', ':')), encoding='utf-8')
+    return path
+
+
+def run_sumo_physics_comparison(steps: int = 100, seed: int = 7, scenario: str = 'north-surge', live: bool = False) -> dict:
+    steps = max(30, min(steps, 180))
+    path = _trace_path(steps, seed, scenario)
+    if not live and path.exists():
+        return json.loads(path.read_text(encoding='utf-8'))
+    if shutil.which('sumo') and shutil.which('netconvert'):
+        return generate_sumo_physics_comparison(steps=steps, seed=seed, scenario=scenario)
+    raise RuntimeError(
+        f'No bundled SUMO replay for scenario={scenario}, steps={steps}, seed={seed}. '
+        'Use a bundled demo scenario or install SUMO to generate a new run.'
+    )

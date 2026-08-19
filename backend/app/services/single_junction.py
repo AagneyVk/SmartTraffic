@@ -14,6 +14,8 @@ class JunctionRun:
     west: int
     throughput: int
     total_wait: int
+    moved: dict[str, int]
+    downstream: dict[str, int]
 
     @property
     def total_queue(self) -> int:
@@ -30,6 +32,8 @@ class JunctionRun:
             'throughput': self.throughput,
             'total_wait': self.total_wait,
             'total_queue': self.total_queue,
+            'moved': self.moved,
+            'downstream': self.downstream,
         }
 
 
@@ -46,14 +50,17 @@ class FixedClockController:
 
 
 class AdaptiveJunctionController:
-    """Demand-aware controller with hysteresis and starvation protection.
+    """Predictive Queue-Pressure (PQP) with hysteresis + starvation guard.
 
-    It compares opposing queue pressure, estimates near-term demand using current
-    queue plus the last observed growth, respects a minimum green to avoid rapid
-    flicker, and enforces a maximum green so the cross-road cannot starve.
+    Score(axis) = current opposing-approach queue
+                  + 0.8 * positive recent queue growth.
+
+    The controller keeps a minimum green to avoid rapid flicker, changes only
+    when the competing score beats the current score by a margin, and forces a
+    switch at max_green so the cross road cannot starve.
     """
 
-    name = 'adaptive-predictive'
+    name = 'predictive-queue-pressure'
 
     def __init__(self, min_green: int = 4, max_green: int = 14, switch_margin: float = 2.0):
         self.min_green = min_green
@@ -111,6 +118,7 @@ def _arrival_schedule(steps: int, seed: int, scenario: str) -> list[dict[str, in
 
 def _run(controller, arrivals: list[dict[str, int]]) -> list[dict]:
     q = {'north': 4, 'south': 3, 'east': 4, 'west': 3}
+    downstream = {'north': 0, 'south': 0, 'east': 0, 'west': 0}
     throughput = 0
     total_wait = 0
     frames: list[dict] = []
@@ -119,6 +127,12 @@ def _run(controller, arrivals: list[dict[str, int]]) -> list[dict]:
     pending_phase: str | None = None
 
     for tick, incoming in enumerate(arrivals):
+        # Vehicles already beyond the junction keep travelling away. This gives
+        # the visualizer a small downstream road occupancy instead of making
+        # cleared vehicles disappear at the stop line.
+        for direction in downstream:
+            downstream[direction] = max(0, downstream[direction] - 1)
+
         for direction, count in incoming.items():
             q[direction] += count
 
@@ -140,10 +154,13 @@ def _run(controller, arrivals: list[dict[str, int]]) -> list[dict]:
         else:
             served = ()
 
+        moved = {'north': 0, 'south': 0, 'east': 0, 'west': 0}
         for direction in served:
-            moved = min(service_per_direction, q[direction])
-            q[direction] -= moved
-            throughput += moved
+            count = min(service_per_direction, q[direction])
+            q[direction] -= count
+            moved[direction] = count
+            downstream[direction] += count
+            throughput += count
 
         total_wait += sum(q.values())
         frames.append(JunctionRun(
@@ -155,6 +172,8 @@ def _run(controller, arrivals: list[dict[str, int]]) -> list[dict]:
             west=q['west'],
             throughput=throughput,
             total_wait=total_wait,
+            moved=moved,
+            downstream=dict(downstream),
         ).to_dict())
     return frames
 
@@ -179,7 +198,15 @@ def run_single_junction_comparison(steps: int = 90, seed: int = 7, scenario: str
         'seed': seed,
         'steps': steps,
         'scenario': scenario,
+        'algorithm': {
+            'name': 'Predictive Queue-Pressure (PQP)',
+            'formula': 'score = queue + 0.8 × positive recent queue growth',
+            'min_green_ticks': 4,
+            'max_green_ticks': 14,
+            'switch_margin': 2.0,
+            'clearance': '1 amber tick before a conflicting phase becomes green',
+        },
         'arrival_schedule': arrivals,
         'fixed': {'controller': 'fixed-clock', 'frames': fixed, 'summary': summary(fixed)},
-        'adaptive': {'controller': 'adaptive-predictive', 'frames': adaptive, 'summary': summary(adaptive)},
+        'adaptive': {'controller': 'predictive-queue-pressure', 'frames': adaptive, 'summary': summary(adaptive)},
     }

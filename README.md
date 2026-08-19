@@ -2,30 +2,119 @@
 
 **SIH PS90 — Adaptive Smart Traffic Signal Control**
 
-SmartTraffic is a local-first traffic-control prototype focused on a clear single-junction A/B demonstration: the same intersection and the same seeded vehicle arrivals are run under a conventional fixed-clock signal and under SmartTraffic's explainable Predictive Queue-Pressure controller. The browser visualizes both simulations side-by-side with signal phases, mixed traffic, downstream road flow, and POV/bird's-eye views.
+SmartTraffic is a local-first traffic-control prototype built around a judge-friendly A/B experiment: the same traffic demand and seed are run under a conventional fixed-clock signal and under SmartTraffic's explainable **Predictive Queue-Pressure (PQP)** controller.
 
-## Current judge-facing demo
+The current main demo uses a two-junction SUMO/TraCI network. SUMO determines vehicle positions, car-following, acceleration/braking, lane changes, signal compliance, queues, and downstream propagation. Three.js only renders the recorded/live TraCI state.
 
-- One physical intersection shown twice side-by-side.
-- Left: conventional fixed-clock signal timing.
-- Right: SmartTraffic **Predictive Queue-Pressure (PQP)** controller.
-- Both sides receive the exact same deterministic arrival schedule.
-- Proper N/S green, amber clearance, and E/W green transitions.
-- Mixed low-poly cars, buses, vans and autos with different physical lengths.
-- Queue spacing depends on vehicle length, so vehicles do not overlap.
-- Vehicles that are discharged physically cross the junction and continue along the visible downstream/adjacent road instead of disappearing at the stop line.
-- Downstream occupancy is shown separately from the approach queue.
-- North/south surge, east/west surge, and balanced scenarios.
-- Average queue, wait, throughput, peak queue, current queue and adjacent-road flow comparison.
-- POV and bird's-eye camera modes.
+## Easiest Windows run
 
-The wider repository still contains network-level controller experiments, SUMO/TraCI adapters, emergency priority work, and benchmark services for future expansion. The main browser demo is intentionally single-junction so the comparison is easy to understand and defend.
+Requirements:
 
-## SmartTraffic algorithm: Predictive Queue-Pressure (PQP)
+- Python 3
+- Node.js / npm
 
-PQP is an explainable demand-aware signal controller. It is not an opaque neural network or reinforcement-learning policy.
+Then from a fresh pull, simply double-click:
 
-For the two competing axes:
+```text
+run_windows.bat
+```
+
+The launcher will automatically:
+
+1. create `backend/.venv` if needed;
+2. install/update backend dependencies;
+3. install the official **Eclipse SUMO** Python wheel, including the platform SUMO tools;
+4. install frontend npm dependencies;
+5. start FastAPI on port `8000`;
+6. start Vite on port `5173`;
+7. open the browser demo.
+
+You do **not** need to separately install SUMO or add `sumo.exe` / `netconvert.exe` to the Windows PATH.
+
+The official `eclipse-sumo` package is pinned in `backend/requirements.txt`. SmartTraffic discovers the SUMO binaries from that installed wheel when they are not present on the system PATH.
+
+## Manual local run
+
+### Backend
+
+```bash
+cd backend
+python -m venv .venv
+```
+
+Activate it, then:
+
+```bash
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+```
+
+Check:
+
+```text
+http://localhost:8000/health
+```
+
+The `physics` section should report both `sumo: true` and `netconvert: true`.
+
+Physics comparison:
+
+```text
+http://localhost:8000/api/physics/comparison?steps=100&seed=7&scenario=north-surge
+```
+
+### Frontend
+
+In another terminal:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open:
+
+```text
+http://localhost:5173
+```
+
+## What the judge sees
+
+The main browser view shows the same SUMO demand under two policies side-by-side:
+
+- **Fixed Clock · SUMO** — conventional fixed-time signal;
+- **SmartTraffic PQP · SUMO** — demand-aware signal control.
+
+The network contains Junction A, a physical 180 m corridor, and Junction B. Vehicles physically travel from A to B inside SUMO, so upstream releases can create or reduce downstream queues rather than being represented by a decorative counter.
+
+Mixed traffic includes:
+
+- cars;
+- motorcycles;
+- auto-rickshaws;
+- buses;
+- trucks;
+- vans.
+
+Each SUMO type has its own physical dimensions, minimum gap, acceleration/deceleration and maximum speed. The current physics setup uses **IDM** car-following and **LC2013** lane-changing.
+
+For each simulated vehicle the backend records/returns:
+
+```text
+vehicle id
+vehicle type
+x/y position
+heading angle
+speed
+lane id
+```
+
+The browser places the recognizable Three.js vehicle model at those authoritative SUMO coordinates.
+
+## SmartTraffic algorithm — Predictive Queue-Pressure (PQP)
+
+PQP is an explainable adaptive controller rather than an opaque neural-network policy.
 
 ```text
 NS queue = north queue + south queue
@@ -35,147 +124,45 @@ NS score = NS queue + 0.8 × max(0, recent NS queue growth)
 EW score = EW queue + 0.8 × max(0, recent EW queue growth)
 ```
 
-The controller then applies:
+In the SUMO comparison it also applies:
 
-- **Minimum green = 4 ticks** — prevents rapid phase flicker.
-- **Switch margin = 2** — the competing axis must meaningfully exceed the current score before a demand-driven switch.
-- **Maximum green = 14 ticks** — starvation guard so the cross road is eventually served.
-- **Amber clearance = 1 tick** — no conflicting movement is discharged while the phase changes.
+- minimum green to prevent rapid switching;
+- a switch margin so tiny queue differences do not cause flicker;
+- maximum green to prevent cross-road starvation;
+- amber clearance before the conflicting phase receives green.
 
-This combines current queue pressure with a short-horizon growth signal, so rising demand can influence the light before the queue becomes extreme.
+Junction B is intentionally kept under the same timing policy in both experiment arms. This lets the demo expose the downstream effect of Junction A's control decision instead of hiding it behind a second optimizer.
 
-## Run locally
+## Traffic scenarios
 
-SmartTraffic is **not dependent on Vercel or any hosted backend**. Run the backend and frontend in two terminals.
+The main demo includes the same-seed versions of:
 
-### 1. Backend
+- N/S rush surge;
+- E/W rush surge;
+- balanced traffic.
 
-From the repository root:
+Performance panels compare average queue, average wait, throughput and Junction B peak queue.
 
-```bash
-cd backend
-python -m venv .venv
-```
+## Portable SUMO replay support
 
-Activate the environment:
-
-**Windows PowerShell**
-
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
-
-**Windows Command Prompt**
-
-```bat
-.venv\Scripts\activate.bat
-```
-
-**Linux/macOS**
+The backend also supports bundled SUMO traces under `simulation/physics/traces/`. These can be generated by:
 
 ```bash
-source .venv/bin/activate
+python scripts/generate_physics_traces.py
 ```
 
-Then install and start FastAPI:
+When a matching bundled trace exists, the API can replay it without launching a new SUMO process. Otherwise the automatically installed Eclipse SUMO runtime generates the comparison live.
 
-```bash
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
-```
-
-Check the backend directly in your browser:
+## Repository structure
 
 ```text
-http://localhost:8000/health
+backend/                 FastAPI, controllers, simulation services
+frontend/                React/Vite + Three.js digital twin
+simulation/physics/      two-junction SUMO network and vehicle definitions
+scripts/                 network / trace helpers
+run_windows.bat          one-click Windows local launcher
 ```
 
-For the single-junction comparison API:
+## Important experimental note
 
-```text
-http://localhost:8000/api/single-junction/comparison?steps=100&seed=7&scenario=north-surge
-```
-
-Both URLs should return JSON.
-
-### 2. Frontend
-
-Open a second terminal:
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Open the Vite URL shown in the terminal, normally:
-
-```text
-http://localhost:5173
-```
-
-The frontend connects directly to:
-
-```text
-http://localhost:8000
-```
-
-You can override it with `VITE_API_URL` if needed.
-
-## If the browser says BACKEND OFFLINE
-
-1. Confirm `uvicorn app.main:app --reload --port 8000` is still running.
-2. Open `http://localhost:8000/health` manually.
-3. If that page does not return JSON, fix/start the backend first.
-4. Return to the frontend and click **Reconnect backend**.
-
-## Single-junction experiment
-
-The endpoint:
-
-```text
-GET /api/single-junction/comparison
-```
-
-creates one seeded arrival schedule and feeds the same arrivals into both controllers. Each returned frame now contains:
-
-```text
-approach queues
-signal phase
-vehicles discharged by direction
-traffic still visible downstream after the junction
-cumulative throughput
-waiting-time accumulator
-```
-
-### Fixed Clock
-
-- equal timed green windows
-- no awareness of queue demand
-- amber transition when changing phase
-
-### SmartTraffic PQP
-
-- compares N/S and E/W queue pressure
-- includes recent queue growth in the short-horizon score
-- minimum-green hysteresis prevents rapid flickering
-- maximum-green protection prevents starvation
-- amber transition before changing phase
-
-This makes the A/B comparison reproducible and fair.
-
-## Research / expansion path
-
-The wider research track remains:
-
-1. fixed-clock baseline
-2. actuated baseline
-3. max-pressure baseline
-4. Predictive Queue-Pressure control
-5. movement-level/network pressure
-6. SUMO/TraCI validation
-7. real OpenStreetMap junction geometry
-8. emergency / ambulance / fire / police priority handling
-9. robustness testing across incidents and unseen demand patterns
-
-No mock-simulator result should be presented as a final SIH performance claim. Final claims should come from controlled SUMO experiments using identical scenarios/seeds.
+Results from the old deterministic/mock engines are development results only. Final SIH performance claims should be taken from controlled SUMO experiments using the same network, seed and demand schedule for every controller being compared.

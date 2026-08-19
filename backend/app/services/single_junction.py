@@ -3,6 +3,8 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
+DIRS = ('north', 'south', 'east', 'west')
+
 
 @dataclass
 class JunctionRun:
@@ -15,7 +17,9 @@ class JunctionRun:
     throughput: int
     total_wait: int
     moved: dict[str, int]
+    turning: dict[str, dict[str, int]]
     downstream: dict[str, int]
+    next_junction: dict
 
     @property
     def total_queue(self) -> int:
@@ -33,7 +37,9 @@ class JunctionRun:
             'total_wait': self.total_wait,
             'total_queue': self.total_queue,
             'moved': self.moved,
+            'turning': self.turning,
             'downstream': self.downstream,
+            'next_junction': self.next_junction,
         }
 
 
@@ -116,9 +122,28 @@ def _arrival_schedule(steps: int, seed: int, scenario: str) -> list[dict[str, in
     return rows
 
 
+def _turn_split(direction: str, count: int, tick: int) -> dict[str, int]:
+    """Deterministic 60/20/20-ish straight/left/right mix for visualization."""
+    result = {'straight': 0, 'left': 0, 'right': 0}
+    d = DIRS.index(direction)
+    for i in range(count):
+        bucket = (tick * 7 + i * 3 + d * 2) % 10
+        if bucket < 6:
+            result['straight'] += 1
+        elif bucket < 8:
+            result['left'] += 1
+        else:
+            result['right'] += 1
+    return result
+
+
 def _run(controller, arrivals: list[dict[str, int]]) -> list[dict]:
     q = {'north': 4, 'south': 3, 'east': 4, 'west': 3}
-    downstream = {'north': 0, 'south': 0, 'east': 0, 'west': 0}
+    downstream = {direction: 0 for direction in DIRS}
+    next_q = {direction: 0 for direction in DIRS}
+    travel_delay = 5
+    transit = [{direction: 0 for direction in DIRS} for _ in range(travel_delay)]
+
     throughput = 0
     total_wait = 0
     frames: list[dict] = []
@@ -127,11 +152,22 @@ def _run(controller, arrivals: list[dict[str, int]]) -> list[dict]:
     pending_phase: str | None = None
 
     for tick, incoming in enumerate(arrivals):
-        # Vehicles already beyond the junction keep travelling away. This gives
-        # the visualizer a small downstream road occupancy instead of making
-        # cleared vehicles disappear at the stop line.
-        for direction in downstream:
-            downstream[direction] = max(0, downstream[direction] - 1)
+        # Traffic released at Junction A reaches Junction B only after a finite
+        # corridor travel delay. Both A/B experiment arms use the same Junction
+        # B timing so differences there come from what Junction A releases.
+        reaching_b = transit.pop(0)
+        transit.append({direction: 0 for direction in DIRS})
+        for direction, count in reaching_b.items():
+            next_q[direction] += count
+
+        next_phase = 'NS' if (tick // 12) % 2 == 0 else 'EW'
+        next_served = ('north', 'south') if next_phase == 'NS' else ('east', 'west')
+        for direction in next_served:
+            next_q[direction] -= min(2, next_q[direction])
+
+        # Adjacent-road occupancy represents vehicles currently between A and B.
+        for direction in DIRS:
+            downstream[direction] = sum(stage[direction] for stage in transit)
 
         for direction, count in incoming.items():
             q[direction] += count
@@ -154,15 +190,21 @@ def _run(controller, arrivals: list[dict[str, int]]) -> list[dict]:
         else:
             served = ()
 
-        moved = {'north': 0, 'south': 0, 'east': 0, 'west': 0}
+        moved = {direction: 0 for direction in DIRS}
+        turning = {direction: {'straight': 0, 'left': 0, 'right': 0} for direction in DIRS}
         for direction in served:
             count = min(service_per_direction, q[direction])
             q[direction] -= count
             moved[direction] = count
-            downstream[direction] += count
+            turning[direction] = _turn_split(direction, count, tick)
+            transit[-1][direction] += count
             throughput += count
 
+        for direction in DIRS:
+            downstream[direction] = sum(stage[direction] for stage in transit)
+
         total_wait += sum(q.values())
+        next_total = sum(next_q.values())
         frames.append(JunctionRun(
             tick=tick,
             phase=phase,
@@ -173,7 +215,16 @@ def _run(controller, arrivals: list[dict[str, int]]) -> list[dict]:
             throughput=throughput,
             total_wait=total_wait,
             moved=moved,
+            turning=turning,
             downstream=dict(downstream),
+            next_junction={
+                'phase': next_phase,
+                'queues': dict(next_q),
+                'arrivals': dict(reaching_b),
+                'total_queue': next_total,
+                'spillback_risk': 'high' if next_total >= 24 else 'medium' if next_total >= 12 else 'low',
+                'travel_delay_ticks': travel_delay,
+            },
         ).to_dict())
     return frames
 
@@ -192,6 +243,8 @@ def run_single_junction_comparison(steps: int = 90, seed: int = 7, scenario: str
             'average_wait_per_tick': round(last['total_wait'] / len(frames), 2),
             'peak_queue': max(f['total_queue'] for f in frames),
             'final_queue': last['total_queue'],
+            'average_next_junction_queue': round(sum(f['next_junction']['total_queue'] for f in frames) / len(frames), 2),
+            'peak_next_junction_queue': max(f['next_junction']['total_queue'] for f in frames),
         }
 
     return {
@@ -205,6 +258,12 @@ def run_single_junction_comparison(steps: int = 90, seed: int = 7, scenario: str
             'max_green_ticks': 14,
             'switch_margin': 2.0,
             'clearance': '1 amber tick before a conflicting phase becomes green',
+        },
+        'network_model': {
+            'junction_a': 'controlled comparison junction',
+            'junction_b': 'downstream observation junction with identical fixed timing in both experiment arms',
+            'travel_delay_ticks': 5,
+            'turn_mix': 'deterministic approximately 60% straight / 20% left / 20% right',
         },
         'arrival_schedule': arrivals,
         'fixed': {'controller': 'fixed-clock', 'frames': fixed, 'summary': summary(fixed)},

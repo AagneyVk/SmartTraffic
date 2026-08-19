@@ -27,7 +27,7 @@ jobs:
         run: npm run build
 
   backend-tests:
-    name: Backend + SUMO physics tests
+    name: Backend + packaged SUMO physics tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -35,19 +35,21 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Install SUMO
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y sumo sumo-tools
-          sumo --version
-          netconvert --version
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install dependencies
+      - name: Install dependencies including Eclipse SUMO wheel
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+      - name: Show packaged SUMO discovery
+        run: |
+          python - <<'PY'
+          from app.services.sumo_physics import physics_status
+          print(physics_status())
+          assert physics_status()['sumo']
+          assert physics_status()['netconvert']
+          PY
       - name: Run tests
         run: pytest -q

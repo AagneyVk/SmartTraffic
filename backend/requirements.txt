@@ -4,7 +4,7 @@ pydantic>=2.11,<3
 pytest>=8.4,<9
 httpx>=0.28,<1
 python-multipart>=0.0.20,<1
-# Optional when SUMO is installed separately:
-traci>=1.23
+# Official Eclipse SUMO wheel includes SUMO/TraCI tooling and platform binaries.
+eclipse-sumo==1.27.1
 # Optional CV runtime for /api/vision/analyse:
 # ultralytics>=8.3

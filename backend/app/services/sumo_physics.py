@@ -22,6 +22,30 @@ ROUTES = {
 }
 
 
+def _find_binary(name: str) -> str | None:
+    """Find SUMO tools from PATH or the official eclipse-sumo wheel."""
+    direct = shutil.which(name)
+    if direct:
+        return direct
+    try:
+        import sumolib
+        candidate = sumolib.checkBinary(name)
+        if candidate and Path(candidate).exists():
+            return str(candidate)
+    except Exception:
+        pass
+    try:
+        import sumo
+        binary = Path(sumo.SUMO_HOME) / 'bin' / name
+        if not binary.exists() and Path(str(binary) + '.exe').exists():
+            binary = Path(str(binary) + '.exe')
+        if binary.exists():
+            return str(binary)
+    except Exception:
+        pass
+    return None
+
+
 def _trace_path(steps: int, seed: int, scenario: str) -> Path:
     safe = scenario.replace('/', '-').replace('..', '-')
     return TRACE_DIR / f'{safe}-s{steps}-seed{seed}.json'
@@ -34,9 +58,13 @@ def available_traces() -> list[str]:
 
 
 def physics_status() -> dict:
+    sumo = _find_binary('sumo')
+    netconvert = _find_binary('netconvert')
     return {
-        'sumo': shutil.which('sumo') is not None,
-        'netconvert': shutil.which('netconvert') is not None,
+        'sumo': bool(sumo),
+        'netconvert': bool(netconvert),
+        'sumo_binary': sumo,
+        'netconvert_binary': netconvert,
         'network_built': NET_FILE.exists(),
         'bundled_replay': bool(available_traces()),
         'available_traces': available_traces(),
@@ -47,9 +75,9 @@ def physics_status() -> dict:
 def _ensure_network() -> None:
     if NET_FILE.exists():
         return
-    netconvert = shutil.which('netconvert')
+    netconvert = _find_binary('netconvert')
     if not netconvert:
-        raise RuntimeError('SUMO netconvert is not installed or not on PATH')
+        raise RuntimeError('SUMO netconvert is unavailable. Run pip install -r backend/requirements.txt.')
     subprocess.run([
         netconvert,
         '--node-files', str(PHYSICS_DIR / 'physics.nod.xml'),
@@ -175,10 +203,10 @@ def _run_policy(policy: str, arrivals: list[dict[str, int]], seed: int) -> list[
     try:
         import traci
     except ImportError as exc:
-        raise RuntimeError('Python TraCI package is not installed') from exc
-    sumo = shutil.which('sumo')
+        raise RuntimeError('TraCI is unavailable. Run pip install -r backend/requirements.txt.') from exc
+    sumo = _find_binary('sumo')
     if not sumo:
-        raise RuntimeError('SUMO executable is not installed or not on PATH')
+        raise RuntimeError('SUMO executable is unavailable. Run pip install -r backend/requirements.txt.')
 
     if traci.isLoaded():
         traci.close()
@@ -281,9 +309,9 @@ def run_sumo_physics_comparison(steps: int = 100, seed: int = 7, scenario: str =
     path = _trace_path(steps, seed, scenario)
     if not live and path.exists():
         return json.loads(path.read_text(encoding='utf-8'))
-    if shutil.which('sumo') and shutil.which('netconvert'):
+    if _find_binary('sumo') and _find_binary('netconvert'):
         return generate_sumo_physics_comparison(steps=steps, seed=seed, scenario=scenario)
     raise RuntimeError(
         f'No bundled SUMO replay for scenario={scenario}, steps={steps}, seed={seed}. '
-        'Use a bundled demo scenario or install SUMO to generate a new run.'
+        'Run pip install -r backend/requirements.txt to install the official eclipse-sumo wheel.'
     )
